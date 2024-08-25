@@ -1,0 +1,12 @@
+nltk
+python-docx
+torch
+ollama
+chromadb
+langchain
+langchain-core
+langchain-community
+langchain_text_splitters
+unstructured
+unstructured[all-docs]
+unstructured[docx,pptx]
