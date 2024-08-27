@@ -1,4 +1,4 @@
-# QuestSolver AI
+# IntelliAnswer
 
 ## Goal:
 
