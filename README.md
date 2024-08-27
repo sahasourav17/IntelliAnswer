@@ -64,7 +64,7 @@ A system that processes user-provided question files and supplementary documents
 7. Now run the python file. For instance, you can use the following command to run the `langchain_ollama_llama3_rag_for_docx.py` script.
 
    ```bash
-   python3 langchain_ollama_llama3_rag_for_docx
+   python3 langchain_ollama_llama3_rag_for_docx.py
    ```
 
 **Note:**
