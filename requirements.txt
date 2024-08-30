@@ -3,6 +3,7 @@ python-docx
 torch
 ollama
 chromadb
+openai
 langchain
 langchain-core
 langchain-openai
