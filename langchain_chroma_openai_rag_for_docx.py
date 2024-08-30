@@ -7,8 +7,10 @@
 import nltk
 import time
 import os
+import openai
 
 nltk.download("punkt")
+
 from langchain_community.document_loaders import UnstructuredWordDocumentLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import OllamaEmbeddings
@@ -18,16 +20,17 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_community.chat_models import ChatOllama
 from langchain_core.runnables import RunnablePassthrough
 from langchain.retrievers.multi_query import MultiQueryRetriever
-from langchain_openai import AzureOpenAIEmbeddings, AzureChatOpenAI
+from langchain_openai import (
+    AzureOpenAIEmbeddings,
+    AzureChatOpenAI,
+    ChatOpenAI,
+    OpenAIEmbeddings,
+)
 
-
-# from langchain_community.embeddings import HuggingFaceEmbeddings
-# from langchain_community.vectorstores import FAISS
-# from langchain_community.llms import HuggingFacePipeline
 from langchain.chains import RetrievalQA
 
-# from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
-# from langchain_openai import ChatOpenAI
+
+openai.api_key = os.environ["OPENAI_API_KEY"]
 
 
 def load_docx(file_path):
@@ -47,6 +50,7 @@ def split_documents(documents):
     return chunks
 
 
+"""
 def create_vector_store(chunks):
     vector_db = Chroma.from_documents(
         documents=chunks,
@@ -61,8 +65,19 @@ def create_vector_store(chunks):
     )
 
     return vector_db
+"""
 
 
+def create_vector_store(chunks):
+    vector_db = Chroma.from_documents(
+        documents=chunks,
+        embedding=OpenAIEmbeddings(model="text-embedding-ada-002"),
+        collection_name="local-rag",
+    )
+    return vector_db
+
+
+"""
 def setup_llm():
     # local_model = "llama3.1:latest"
     llm = AzureChatOpenAI(
@@ -71,6 +86,13 @@ def setup_llm():
         openai_api_version=os.environ.get("AZURE_OPENAI_API_VERSION"),
         openai_api_key=os.environ.get("AZURE_OPENAI_API_KEY"),
     )
+    return llm
+"""
+
+
+def setup_llm():
+    # local_model = "llama3.1:latest"
+    llm = ChatOpenAI(temperature=0.00001)
     return llm
 
 
