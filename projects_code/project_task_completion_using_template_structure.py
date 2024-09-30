@@ -26,11 +26,28 @@ from docx.oxml.text.paragraph import CT_P
 from docx.table import _Cell, Table
 from docx.text.paragraph import Paragraph
 
+# Library for Cost Calculations
+import tiktoken
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
 openai.api_key = os.environ["OPENAI_API_KEY"]
+
+
+def num_tokens_from_string(string: str, encoding_name: str) -> int:
+    """Returns the number of tokens in a text string."""
+    encoding = tiktoken.get_encoding(encoding_name)
+    num_tokens = len(encoding.encode(string))
+    return num_tokens
+
+
+def calculate_embedding_cost(num_tokens):
+    """Calculate the cost of embeddings based on current OpenAI pricing."""
+    # Price per 1K tokens for text-embedding-ada-002, as of September 2023
+    price_per_1k_tokens = 0.0001
+    return (num_tokens / 1000) * price_per_1k_tokens
 
 
 def docx_to_markdown(docx_path):
@@ -99,6 +116,14 @@ def split_documents(documents):
 
 
 def create_vector_store(chunks):
+    total_tokens = 0
+    for chunk in chunks:
+        total_tokens += num_tokens_from_string(chunk.page_content, "cl100k_base")
+
+    estimated_cost = calculate_embedding_cost(total_tokens)
+
+    print(f"Total tokens to be embedded: {total_tokens}")
+    print(f"Estimated cost for embeddings: ${estimated_cost:.4f}")
     vector_db = Chroma.from_documents(
         documents=chunks,
         embedding=OpenAIEmbeddings(model="text-embedding-ada-002"),
@@ -133,7 +158,7 @@ def project_info_extraction_pipeline(vector_store, llm):
 
     Please provide the output in the following format:
 
-    Scenario: [Provide a summarized scenario]
+    Scenario: [Provide the extracted scenario]
     Be concise and to the point.
     """
     retriever = vector_store.as_retriever()
@@ -146,29 +171,9 @@ def project_info_extraction_pipeline(vector_store, llm):
     return result["result"]
 
 
-# def generate_project_output(llm, project_info):
-#     prompt = f"""
-#     [INST] You are a creative scenario generator for project-based learning.Your task is to create or assume a detailed, elaborated, engaging scenario based on the provided project information and only include the scenario details. After generating the scenario, you have to complete the tasks.
-#     Project Information: {project_info}
-
-#     Include a detailed description of the event including who it is aimed at, the format of the day and where it will be held, as well as approximately how many event staff and participants there will be.
-#     List at least 10 hazards. The hazards you list must include at least one actual or foreseeable hazard from the following list:
-#         Physical environment
-#         Plant/equipment
-#         Work practice
-#         Security issue
-#     Describe each one and include the risk rating and a suggested risk control. Identify who is responsible. Ensure the risk rating is scored as per the risk legend included with this plan.Make sure you use markdown tabular format for the output. you need participate in a brief meeting with your assessor to discuss Hazard Identification and Risk Assessment Tool. Provide meeting minutes for the meeting with the assesor.
-
-
-#     [/INST]
-#     """
-#     response = llm.invoke(prompt)
-#     return response.content
-
-
 def generate_project_output(llm, project_info, template_content):
     prompt = f"""
-    [INST] You are a creative scenario generator for project-based learning.Your task is to create or assume a detailed, elaborated, engaging scenario based on the provided project information and only include the scenario details. After generating the scenario, you have to complete the tasks by following the template structure. 
+    [INST] You are a creative scenario generator for project-based learning.Your task is to create or assume a detailed, elaborated, engaging scenario based on the provided project information and only include the scenario details. After generating the scenario, you have to complete the tasks by strictly following the template structure. 
     Project Information: {project_info}
     Template Structure: {template_content}
     

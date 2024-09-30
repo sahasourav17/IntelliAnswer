@@ -1,6 +1,7 @@
 nltk
 python-docx
 torch
+tiktoken
 ollama
 chromadb
 openai
