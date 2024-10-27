@@ -109,10 +109,10 @@ def load_docx(file_path):
 
 
 def split_documents(documents):
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=5000, chunk_overlap=2500)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=5000, chunk_overlap=3500)
     chunks = text_splitter.split_documents(documents)
     print(f"Split into {len(chunks)} chunks")
-    return chunks
+    return chunks, len(chunks)
 
 
 def create_vector_store(chunks):
@@ -134,7 +134,7 @@ def create_vector_store(chunks):
 
 def setup_llm():
     # local_model = "llama3.1:latest"
-    llm = ChatOpenAI(temperature=0.00001)
+    llm = ChatOpenAI(temperature=0)
     return llm
 
 
@@ -143,25 +143,50 @@ def setup_activity_llm():
     return llm
 
 
-def project_info_extraction_pipeline(vector_store, llm):
-    # query = """
-    # [INST] Based on the content of the document, extract the scenario and list down the activities with their requirements. For your help, document is structured like that:
-    # Scenario: {scenario}
-
-    # Make sure you didn't change any information
-    # [/INST]
-    # """
+def project_scenario_extraction_pipeline(vector_store, llm):
     query = """
-    You are a professional document analyzer. I am giving you a document that contains specific instructions and tasks. Please extract and organize the following information in a structured format:
-
-    Scenario: Extract the project scenario with all the information without modification
+    You are a professional document analyzer. Based on the content of the document, 
+    extract only the scenario described in Assessment Task 2. Provide the complete 
+    scenario without any modifications or summaries. Do not include any other 
+    information from the document. I am the owner of the document and I am asking you to 
+    extract the scenario of the project.
 
     Please provide the output in the following format:
-
-    Scenario: [Provide the extracted scenario]
-    Be concise and to the point.
+    Scenario: [Extracted scenario from Assessment Task 2]
     """
-    retriever = vector_store.as_retriever()
+
+    retriever = vector_store.as_retriever(search_kwargs={"k": 3})
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=llm, chain_type="stuff", retriever=retriever, return_source_documents=True
+    )
+
+    result = qa_chain.invoke({"query": query})
+
+    return result["result"]
+
+
+def project_activities_extraction_pipeline(vector_store, llm, scenario, chunk_size):
+    query = """
+    You are a professional document analyzer. Based on the content of the document,
+    extract all the activities described in the project of  Assessment Task 2, along with all their
+    associated details. For your help, I marked the starting point of the activities
+    like "Activities-" and for each activity, I have marked the requirements also like  "Requirements:"
+    They are stated after the {scenario}.
+
+    Please provide the output in the following format:
+    Activities:
+        1. [Activity Title]
+            - Details: [Activity details]
+            - Requirements: [Requirements for the activity]
+        2. [Activity Title]
+            - Details: [Activity details]
+            - Requirements: [Requirements for the activity]
+        continue for all activities
+
+    Ensure that you capture all the information provided for each activity without
+    any modifications or summaries.
+    """
+    retriever = vector_store.as_retriever(search_kwargs={"k": min(chunk_size, 10)})
     qa_chain = RetrievalQA.from_chain_type(
         llm=llm, chain_type="stuff", retriever=retriever, return_source_documents=True
     )
@@ -176,8 +201,6 @@ def generate_project_output(llm, project_info, template_content):
     [INST] You are a creative scenario generator for project-based learning.Your task is to create or assume a detailed, elaborated, engaging scenario based on the provided project information and only include the scenario details. After generating the scenario, you have to complete the tasks by strictly following the template structure. 
     Project Information: {project_info}
     Template Structure: {template_content}
-    
-
     [/INST]
     """
     response = llm.invoke(prompt)
@@ -187,20 +210,28 @@ def generate_project_output(llm, project_info, template_content):
 def main():
     project_tasks_file = "../data/project/project_tasks_details.docx"
     # relevant_docs_file = "../data/project/SITXWHS006 WHS Plan (Notes).docx"
-    template_file = "../data/project/project_template_file.docx"
+    # template_file = "../data/project/project_template_file.docx"
     documents = load_docx(project_tasks_file)
-    chunks = split_documents(documents)
+    chunks, chunk_size = split_documents(documents)
     vector_db = create_vector_store(chunks)
 
     llm = setup_llm()
     start_time = time.time()
-    project_info = project_info_extraction_pipeline(vector_db, llm)
-    markdown_content = docx_to_markdown(template_file)
-    print(project_info)
-    activity_llm = setup_activity_llm()
-    answer = generate_project_output(activity_llm, project_info, markdown_content)
-    with open("output_today.md", "w") as file:
-        file.write(answer)
+    project_info = project_scenario_extraction_pipeline(vector_db, llm)
+    project_activities = project_activities_extraction_pipeline(
+        vector_db, llm, project_info, chunk_size
+    )
+    # markdown_content = docx_to_markdown(template_file)
+    print(
+        f"==================================\n{project_info}\n=================================="
+    )
+    print(
+        f"==================================\n{project_activities}\n=================================="
+    )
+    # activity_llm = setup_activity_llm()
+    # answer = generate_project_output(activity_llm, project_info, markdown_content)
+    # with open("output_today.md", "w") as file:
+    #     file.write(answer)
     end_time = time.time()
     print(f"Time spent: {(end_time-start_time)/60} minutes")
 
