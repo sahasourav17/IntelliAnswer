@@ -46,8 +46,8 @@ def create_vector_store(chunks, collection_name="local-rag"):
     return vector_db
 
 
-def setup_language_model():
-    return ChatOpenAI(temperature=0)
+def setup_language_model(temperature=0):
+    return ChatOpenAI(temperature=temperature)
 
 
 def create_qa_pipeline(vectorstore, llm):
@@ -68,39 +68,64 @@ def extract_questions(qa_chain, prompt):
 
 
 def generate_answer(qa_chain, question, guidelines_qa=None):
-    # First try to find answer from knowledge base
-    result = qa_chain.invoke(
+    # First try to find relevant context from knowledge base
+    context_result = qa_chain.invoke(
         {
-            "query": f"""Answer this question using the provided knowledge base: {question}
-        If you find relevant information, provide a detailed answer.
+            "query": f"""Find relevant information for this question from the knowledge base: {question}
+        If you find relevant information, return it.
         If you don't find relevant information, respond with 'NO_CONTEXT_FOUND'."""
         }
     )
 
-    answer = result["result"]
+    context = context_result["result"]
 
     # If no context found in knowledge base, try guidelines
-    if "NO_CONTEXT_FOUND" in answer and guidelines_qa:
-        result = guidelines_qa.invoke(
+    if "NO_CONTEXT_FOUND" in context and guidelines_qa:
+        context_result = guidelines_qa.invoke(
             {
-                "query": f"""Answer this question using the provided guidelines: {question}
-            If you find relevant information, provide a detailed answer.
+                "query": f"""Find relevant information for this question from the guidelines: {question}
+            If you find relevant information, return it.
             If you don't find relevant information, respond with 'NO_CONTEXT_FOUND'."""
             }
         )
-        answer = result["result"]
+        context = context_result["result"]
 
-        # If still no context found, use LLM's general knowledge
-        if "NO_CONTEXT_FOUND" in answer:
-            result = qa_chain.invoke(
-                {
-                    "query": f"""Please answer this question to the best of your ability using your general knowledge: {question}
-                Note: This answer is based on general knowledge as no specific context was found in the provided documents."""
-                }
-            )
-            answer = result["result"]
+    # If we found context, use it to generate a more creative answer
+    if "NO_CONTEXT_FOUND" not in context:
+        # Create a new LLM instance with higher temperature for more creative responses
+        creative_llm = ChatOpenAI(temperature=0.3)
+        response = creative_llm.invoke(
+            f"""Using the following context, provide a detailed and well-structured answer to the question. 
+            Be creative in your expression while maintaining accuracy with the context.
+            Rephrase and reorganize the information to make it more engaging.
+            
+            Question: {question}
+            
+            Context: {context}
+            
+            Instructions:
+            1. Provide comprehensive information based on the context
+            2. Use your own words while maintaining accuracy
+            3. Add relevant examples or elaborations where appropriate
+            
+            Answer:"""
+        )
+        return response.content
 
-    return answer
+    # If no context found anywhere, use general knowledge with moderate creativity
+    general_llm = ChatOpenAI(temperature=0.5)
+    response = general_llm.invoke(
+        f"""Please answer this question to the best of your ability.
+        Be informative yet engaging in your response.
+        
+        Question: {question}
+        
+        Note: This answer is based on general knowledge as no specific context was found in the provided documents.
+        
+        Answer:"""
+    )
+    return response.content
+
 
 def main():
     st.title("Assessment Task 1: Knowledge Questions Solver")
@@ -119,7 +144,7 @@ def main():
         documents = load_document(questions_doc)
         splits = split_documents(documents)
         vectorstore = create_vector_store(splits, "questions-store")
-        llm = setup_language_model()
+        llm = setup_language_model()  # Default temperature=0 for question extraction
         qa_chain = create_qa_pipeline(vectorstore, llm)
 
         default_prompt = """
@@ -162,7 +187,9 @@ def main():
             kb_documents = load_document(knowledge_base)
             kb_splits = split_documents(kb_documents)
             kb_vectorstore = create_vector_store(kb_splits, "kb-store")
-            llm = setup_language_model()
+            llm = setup_language_model(
+                temperature=0
+            )  # Use temperature=0 for context retrieval
             kb_qa = create_qa_pipeline(kb_vectorstore, llm)
 
             # Process guidelines if provided
