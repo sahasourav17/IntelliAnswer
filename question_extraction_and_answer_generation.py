@@ -102,7 +102,6 @@ def generate_answer(qa_chain, question, guidelines_qa=None):
 
     return answer
 
-
 def main():
     st.title("Assessment Task 1: Knowledge Questions Solver")
 
@@ -134,8 +133,14 @@ def main():
             )
             st.success("Questions extracted successfully!")
 
-    # Answer Generation Section
+    # Always show extracted questions if they exist
     if st.session_state.extracted_questions:
+        with st.expander("Show Extracted Questions", expanded=True):
+            for i, question in enumerate(st.session_state.extracted_questions, 1):
+                st.write(f"{question}")
+        st.markdown("---")
+
+        # Answer Generation Section
         st.header("Step 2: Upload Reference Documents")
 
         col1, col2 = st.columns(2)
@@ -173,7 +178,7 @@ def main():
             # Generate answers for each question
             st.subheader("Generated Answers:")
             for i, question in enumerate(st.session_state.extracted_questions, 1):
-                with st.expander(f"Question {i}: {question}"):
+                with st.expander(f"Question: {question}"):
                     answer = generate_answer(kb_qa, question, guidelines_qa)
                     st.write(answer)
 
