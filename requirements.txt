@@ -13,3 +13,4 @@ langchain_text_splitters
 unstructured
 unstructured[all-docs]
 unstructured[docx,pptx]
+pypandoc-binary
