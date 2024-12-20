@@ -15,6 +15,14 @@ import pypandoc
 load_dotenv()
 openai.api_key = os.environ["OPENAI_API_KEY"]
 
+
+st.set_page_config(
+    page_title="IntelliAnswer",
+    page_icon="🎈",
+    layout="centered",
+    initial_sidebar_state="expanded",
+)
+
 # Configuration constants
 CONFIG = {
     "chunk_size": 3500,
