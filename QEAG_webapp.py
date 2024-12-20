@@ -37,10 +37,10 @@ Context: {context}
 Instructions:
 1. Strictly follow the document structure like table etc
 
-Answer:"""
+Answer:\n"""
 
 DEFAULT_EXTRACTION_PROMPT = """
-[INST] Based on the content of the document, find Assessment Task 1: Knowledge questions without any modifications. Format your response as a numbered list. [/INST]
+[INST] Based on the content of the document, find all the Assessment Task 1: Knowledge questions without any modifications. Format your response as a numbered list. [/INST]
 """
 
 
@@ -49,9 +49,15 @@ def initialize_session_state():
     if "extracted_questions" not in st.session_state:
         st.session_state.extracted_questions = None
     if "generated_answers" not in st.session_state:
-        st.session_state.generated_answers = None
+        st.session_state.generated_answers = {}
     if "generate_answer_prompt" not in st.session_state:
         st.session_state.generate_answer_prompt = DEFAULT_ANSWER_PROMPT
+    if "answers_generated" not in st.session_state:
+        st.session_state.answers_generated = False
+    if "kb_qa" not in st.session_state:
+        st.session_state.kb_qa = None
+    if "guidelines_qa" not in st.session_state:
+        st.session_state.guidelines_qa = None
 
 
 def save_answers_to_markdown(questions, answers, filename="assessment_answers.md"):
@@ -79,7 +85,9 @@ def save_markdown_to_docx(markdown_path, output_filename="assessment_answers.doc
 
 def save_answers(questions, answers):
     """Main function to save answers first as markdown and then convert to DOCX."""
-    markdown_path = save_answers_to_markdown(questions, answers)
+    # Convert dictionary to lists maintaining question order
+    answer_list = [answers[q] for q in questions]
+    markdown_path = save_answers_to_markdown(questions, answer_list)
     return save_markdown_to_docx(markdown_path)
 
 
@@ -170,120 +178,161 @@ def extract_questions(qa_chain, prompt):
     return [q.strip() for q in questions_text.split("\n") if q.strip()]
 
 
-def render_prompt_customization():
-    """Render the prompt customization section in Streamlit."""
-    with st.expander("Customize Prompt for Generating Answers"):
-        custom_prompt = st.text_area(
-            "Edit the prompt below to customize how answers are generated:",
-            value=st.session_state.generate_answer_prompt,
-            height=150,
+def render_answer_generation(progress_bar, answers_container):
+    """Generate answers progressively and display them immediately."""
+    total_questions = len(st.session_state.extracted_questions)
+
+    for idx, question in enumerate(st.session_state.extracted_questions):
+        # Update progress bar first
+        progress = (idx + 1) / total_questions
+        progress_bar.progress(progress)
+
+        # Generate answer
+        formatted_prompt = st.session_state.generate_answer_prompt.format(
+            question=question, context="{context}"
+        )
+        answer = generate_answer(
+            st.session_state.kb_qa,
+            question,
+            st.session_state.guidelines_qa,
+            formatted_prompt,
         )
 
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Save Prompt"):
-                st.session_state.generate_answer_prompt = custom_prompt
-                st.success("Prompt saved successfully!")
-        with col2:
-            if st.button("Revert to Default Prompt"):
-                st.session_state.generate_answer_prompt = DEFAULT_ANSWER_PROMPT
-                st.success("Prompt reverted to default!")
+        # Store the answer
+        st.session_state.generated_answers[question] = answer
 
-
-def render_answer_generation(kb_qa, guidelines_qa):
-    """Render the answer generation section in Streamlit."""
-    st.subheader("Generated Answers:")
-    generated_answers = []
-
-    for question in st.session_state.extracted_questions:
-        with st.expander(f"Question: {question}"):
-            formatted_prompt = st.session_state.generate_answer_prompt.format(
-                question=question, context="{context}"
-            )
-            answer = generate_answer(kb_qa, question, guidelines_qa, formatted_prompt)
+        # Display the answer immediately in the main content area
+        with answers_container.expander(f"Question: {question}", expanded=False):
             st.write(answer)
-            generated_answers.append(answer)
 
-    st.session_state.generated_answers = generated_answers
+    # Mark generation as complete
+    st.session_state.answers_generated = True
+
+
+def render_sidebar():
+    """Render all input controls in the sidebar."""
+    # Initialize return values
+    knowledge_base = None
+    guidelines = None
+
+    with st.sidebar:
+        st.header("Configuration")
+
+        # Step 1: Question Extraction
+        with st.expander("Step 1: Extract Questions", expanded=True):
+            questions_doc = st.file_uploader(
+                "Upload questions document", type=["docx"], key="questions_doc"
+            )
+
+            if questions_doc is not None:
+                custom_prompt = st.text_area(
+                    "Customize extraction prompt", DEFAULT_EXTRACTION_PROMPT, height=100
+                )
+                if st.button("Extract Questions"):
+                    documents = load_document(questions_doc)
+                    qa_chain = setup_qa_chain(documents, "questions-store")
+                    st.session_state.extracted_questions = extract_questions(
+                        qa_chain, custom_prompt
+                    )
+                    st.success("Questions extracted successfully!")
+                    st.session_state.answers_generated = False
+
+        # Step 2: Reference Documents
+        if st.session_state.extracted_questions:
+            with st.expander("Step 2: Upload Reference Documents", expanded=True):
+                knowledge_base = st.file_uploader(
+                    "Upload Knowledge Base", type=["docx"], key="knowledge_base"
+                )
+                guidelines = st.file_uploader(
+                    "Upload Guidelines", type=["docx"], key="guidelines"
+                )
+
+            # Prompt Customization
+            with st.expander("Promt Modification (optional)", expanded=False):
+                custom_prompt = st.text_area(
+                    "Customize answer generation prompt:",
+                    value=st.session_state.generate_answer_prompt,
+                    height=150,
+                )
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Save Prompt"):
+                        st.session_state.generate_answer_prompt = custom_prompt
+                        st.success("Saved!")
+                with col2:
+                    if st.button("Reset Default"):
+                        st.session_state.generate_answer_prompt = DEFAULT_ANSWER_PROMPT
+                        st.success("Reset!")
+
+            # Generate Answers Button in sidebar
+            if knowledge_base:
+                if st.button("Generate Answers", type="primary", key="generate_btn"):
+                    # Setup QA chains
+                    st.session_state.kb_qa = setup_qa_chain(
+                        load_document(knowledge_base), "kb-store"
+                    )
+                    if guidelines:
+                        st.session_state.guidelines_qa = setup_qa_chain(
+                            load_document(guidelines), "guidelines-store"
+                        )
+                    else:
+                        st.session_state.guidelines_qa = None
+
+                    st.session_state.trigger_generation = True
+
+    return knowledge_base, guidelines
 
 
 def main():
-    st.title("Assessment Task 1: Knowledge Questions Solver")
+    st.title("IntelliAnswer QnA")
     initialize_session_state()
 
-    # Question Extraction Section
-    st.header("Step 1: Extract Questions")
-    questions_doc = st.file_uploader(
-        "Upload questions document", type=["docx"], key="questions_doc"
-    )
+    # Render sidebar and get uploaded files
+    knowledge_base, guidelines = render_sidebar()
 
-    if questions_doc is not None:
-        documents = load_document(questions_doc)
-        qa_chain = setup_qa_chain(documents, "questions-store")
-
-        custom_prompt = st.text_area(
-            "Customize the prompt", DEFAULT_EXTRACTION_PROMPT, height=100
-        )
-
-        if st.button("Extract Questions"):
-            st.session_state.extracted_questions = extract_questions(
-                qa_chain, custom_prompt
-            )
-            st.success("Questions extracted successfully!")
-
-    # Display extracted questions
+    # Main content area
     if st.session_state.extracted_questions:
-        with st.expander("Show Extracted Questions", expanded=False):
+        st.header("Extracted Questions")
+        with st.expander("View All Questions", expanded=True):
             for question in st.session_state.extracted_questions:
-                st.write(question)
+                st.write(f"{question}")
+
         st.markdown("---")
 
-        # Answer Generation Section
-        st.header("Step 2: Upload Reference Documents")
-        col1, col2 = st.columns(2)
-        with col1:
-            knowledge_base = st.file_uploader(
-                "Upload Knowledge Base", type=["docx"], key="knowledge_base"
-            )
-        with col2:
-            guidelines = st.file_uploader(
-                "Upload Guidelines", type=["docx"], key="guidelines"
-            )
+        # Create containers for progress and answers in main area
+        if not st.session_state.answers_generated:
+            st.header("Generated Answers")
+            progress_bar = st.progress(0)
+            answers_container = st.container()
 
-        render_prompt_customization()
+            # Check if generation has been triggered from sidebar
+            if (
+                "trigger_generation" in st.session_state
+                and st.session_state.trigger_generation
+            ):
+                st.session_state.trigger_generation = False  # Reset trigger
+                render_answer_generation(progress_bar, answers_container)
 
-        if st.button("Generate Answers"):
-            if not knowledge_base:
-                st.error("Please upload at least the knowledge base document.")
-                return
-
-            kb_qa = setup_qa_chain(load_document(knowledge_base), "kb-store")
-            guidelines_qa = None
-            if guidelines:
-                guidelines_qa = setup_qa_chain(
-                    load_document(guidelines), "guidelines-store"
-                )
-
-            render_answer_generation(kb_qa, guidelines_qa)
-
-        # Save to DOCX button
-        if st.session_state.generated_answers and st.button("Save Answers as DOCX"):
-            try:
-                saved_file_path = save_answers(
-                    st.session_state.extracted_questions,
-                    st.session_state.generated_answers,
-                )
-
-                with open(saved_file_path, "rb") as file:
-                    st.download_button(
-                        label="Download Answers",
-                        data=file.read(),
-                        file_name="assessment_answers.docx",
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        # Show download button after answers are generated
+        if st.session_state.answers_generated:
+            if st.button("Save Answers as DOCX", type="primary"):
+                try:
+                    saved_file_path = save_answers(
+                        st.session_state.extracted_questions,
+                        st.session_state.generated_answers,
                     )
-                st.success("Answers saved successfully!")
-            except Exception as e:
-                st.error(f"Error saving file: {e}")
+
+                    with open(saved_file_path, "rb") as file:
+                        st.download_button(
+                            label="Download Answers",
+                            data=file.read(),
+                            file_name="assessment_answers.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        )
+                    st.success("Answers saved successfully!")
+                except Exception as e:
+                    st.error(f"Error saving file: {e}")
 
 
 if __name__ == "__main__":
