@@ -4,34 +4,6 @@
 
 A system that processes user-provided question files and supplementary documents. It extracts questions, answers them using information from the supplementary files when available, and falls back to an LLM for answers when necessary.
 
-### Implemented Features:
-
-- Read docx files.
-
-  If you want to use the pdf file then instead of using the `read_docx` function, you can use the bellow function
-
-  ```python
-  from langchain_community.document_loaders import UnstructuredPDFLoader
-  def load_pdf(file_path):
-    loader = UnstructuredPDFLoader(file_path=file_path)
-    documents = loader.load()
-    print(f"Loaded {len(documents)} documents")
-    return documents
-  ```
-
-- Extract information based on user query (currently assessment's task 1 questions )
-
-  ```python
-  def extract_questions(qa_chain):
-    # change the query according to your task
-    query = """
-    [INST] Based on the content of the document, find all the questions for assesment task 1.
-    Format your response as a numbered list. [/INST]
-    """
-    result = qa_chain({"query": query})
-    return result["result"]
-  ```
-
 ## Installation
 
 1. Create a virtual environment (optional but recommended)
@@ -44,6 +16,9 @@ A system that processes user-provided question files and supplementary documents
    ```bash
    pip install -r requirements.txt
    ```
+
+If you want to use Ollama with local models then follow this steps:
+
 3. Download `Ollama` from here [https://ollama.com/download]
 
 4. Run `ollama` after installing
@@ -66,6 +41,12 @@ A system that processes user-provided question files and supplementary documents
    ```bash
    python3 langchain_ollama_llama3_rag_for_docx.py
    ```
+
+If you want to run the webapp, you can use the following command. Make sure you have the `OPENAI_API_KEY` set to your `.env` file
+
+```bash
+streamlit run QEAG_webapp.py
+```
 
 **Note:**
 
